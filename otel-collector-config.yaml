@@ -1,0 +1,74 @@
+extensions:
+  health_check: {}
+  pprof:
+    endpoint: :1888
+  zpages:
+    endpoint: :55679
+
+telemetry:
+  metrics:
+    address: :8888
+
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+      http: { endpoint: 0.0.0.0:4318 }
+
+
+  # Datadogで正確なインフラストラクチャメトリクスを取得するには、hostmetrics レシーバーが必要です。
+  hostmetrics:
+    collection_interval: 10s
+    scrapers:
+      paging:
+        metrics:
+          system.paging.utilization:
+            enabled: true
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      disk:
+      filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+      load:
+      memory:
+      network:
+      processes:
+
+  # prometheus レシーバーは、OpenTelemetry Collector ダッシュボードに必要なメトリクスをスクレイプします。
+  prometheus:
+    config:
+      scrape_configs:
+      - job_name: 'otelcol'
+        scrape_interval: 10s
+        static_configs:
+        - targets: ['0.0.0.0:8888']
+
+processors:
+  batch:
+    send_batch_max_size: 100
+    send_batch_size: 10
+    timeout: 10s
+  resourcedetection: { detectors: [env,system] }
+
+connectors:
+  datadog/connector:
+
+exporters:
+  datadog:            # ← agent サブキーは不要
+    api:
+      key: ${DD_API_KEY}
+      site: ${DD_SITE}
+
+service:
+  extensions: [health_check,pprof,zpages]
+  telemetry:
+    metrics:
+      address: :8888
+  pipelines:
+    traces:   { receivers: [otlp], processors: [batch,resourcedetection], exporters: [datadog] }
+    metrics:  { receivers: [otlp], processors: [batch,resourcedetection], exporters: [datadog] }
+    logs:     { receivers: [otlp], processors: [batch,resourcedetection], exporters: [datadog] }

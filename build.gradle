@@ -1,0 +1,100 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.4.4'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id 'com.google.cloud.tools.jib' version '3.4.0'  // Jibプラグイン
+}
+
+group = 'com.example'
+version = '0.0.1-SNAPSHOT'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(21)
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+}
+
+repositories {
+	mavenCentral()
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	compileOnly 'org.projectlombok:lombok'
+	developmentOnly 'org.springframework.boot:spring-boot-devtools'
+	developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
+	runtimeOnly 'org.postgresql:postgresql'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+
+
+	// OpenTelemetry関連
+	implementation(enforcedPlatform('io.opentelemetry:opentelemetry-bom:1.49.0'))
+    implementation(enforcedPlatform('io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.15.0'))
+	runtimeOnly 'io.opentelemetry:opentelemetry-exporter-otlp:1.49.0'
+	implementation 'io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter'
+
+}
+// configurations.all {
+//     resolutionStrategy {
+//         // すべての io.opentelemetry.* を 1.49.0 に固定
+//         eachDependency { d ->
+//             if (d.requested.group == 'io.opentelemetry') {
+//                 d.useVersion '1.49.0'
+//                 d.because 'spring‑boot‑starter が持つ 1.43 の constraint を上書き'
+//             }
+//         }
+//     }
+// }
+
+configurations.all {
+    resolutionStrategy {
+        eachDependency { d ->
+            if (d.requested.group == 'io.opentelemetry') {
+
+                // incubator / alpha 系は公式が指定するままにする
+                if (d.requested.name.contains('incubator')) {
+                    d.useVersion '1.49.0-alpha'
+                } else {
+                    d.useVersion '1.49.0'
+                }
+                d.because 'unify OTel core to 1.49.0, keep incubator at 1.49.0‑alpha'
+            }
+        }
+    }
+}
+
+
+tasks.named('test') {
+	useJUnitPlatform()
+}
+
+// Jibの設定
+jib {
+	from {
+		image = 'amazoncorretto:21-alpine'  // Amazon Corretto Java 21を使用
+	}
+	to {
+		image = 'your-docker-registry/your-app-name'
+		// タグは必要に応じて設定
+		// tags = ['latest', 'v1.0.0']
+	}
+	container {
+		ports = ['8080']
+		environment = [
+			'OTEL_EXPORTER_OTLP_ENDPOINT': 'http://datadog-agent:4317',
+			'OTEL_RESOURCE_ATTRIBUTES': 'service.name=your-service-name,deployment.environment=development',
+			'OTEL_METRICS_EXPORTER': 'otlp',
+			'OTEL_TRACES_EXPORTER': 'otlp',
+			'OTEL_LOGS_EXPORTER': 'otlp'
+		]
+		// JVMオプション
+		jvmFlags = ['-Xms512m', '-Xmx512m']
+	}
+}

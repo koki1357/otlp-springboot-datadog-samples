@@ -1,0 +1,48 @@
+version: '3'
+services:
+  postgres:
+    image: 'postgres:latest'
+    environment:
+      - 'POSTGRES_DB=mydatabase'
+      - 'POSTGRES_PASSWORD=secret'
+      - 'POSTGRES_USER=myuser'
+    ports:
+      - '5432'
+
+  datadog-agent:
+    image: gcr.io/datadoghq/agent:7
+    # image: gcr.io/datadoghq/agent:7.65.0   # ★
+    container_name: dd-agent
+    env_file:
+      - .env
+    environment:
+      - DD_DOGSTATSD_NON_LOCAL_TRAFFIC=true
+      - DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_GRPC_ENDPOINT=0.0.0.0:4317
+      - DD_OTLP_CONFIG_RECEIVER_PROTOCOLS_HTTP_ENDPOINT=0.0.0.0:4318
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /proc/:/host/proc/:ro
+      - /sys/fs/cgroup/:/host/sys/fs/cgroup/:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+    ports:
+      - "14317:4317"  # OTLP gRPC
+      - "14318:4318"  # OTLP HTTP
+    depends_on:
+      - postgres
+
+  otel-collector:
+    # image: otel/opentelemetry-collector-contrib
+    image: otel/opentelemetry-collector-contrib:0.123.0   # ★
+    environment:
+      DD_API_KEY: ${DD_API_KEY}
+      DD_SITE: ${DD_SITE}
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+    ports:
+      - 1888:1888 # pprof extension
+      - 8888:8888 # Prometheus metrics exposed by the Collector
+      - 8889:8889 # Prometheus exporter metrics
+      - 13133:13133 # health_check extension
+      - 4317:4317 # OTLP gRPC receiver
+      - 4318:4318 # OTLP http receiver
+      - 55679:55679 # zpages extension
